@@ -314,10 +314,10 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
         NULL
     };
 
-    baseLength = strlen(config.databaseDirectory) + 15;
+    baseLength = strlen(config->databaseDirectory) + 15;
 
     if (access(config->databaseDirectory, R_OK | W_OK | X_OK) != 0) {
-        fprintf(stderr, "Cannot write in directory %s\n", config->databaseDirectory)
+        fprintf(stderr, "Cannot write in directory %s\n", config->databaseDirectory);
         return E_FILE_ACCESS;
     }
 
@@ -442,7 +442,7 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
     return E_OK;
 }
 
-int print_data() {
+int print_data(struct _CONFIGSTRUCT *config) {
     char timeStringBuffer[26];
     struct tm * tm_info;
     int result;
@@ -465,7 +465,7 @@ int print_data() {
     printf("\n");
     fflush(stdout);
 
-    result = update_rrd_database();
+    result = update_rrd_database(config);
 
     return result;
 }
@@ -812,7 +812,10 @@ int main(int argc, char **argv) {
     config.serialPortBits = CS8;
     config.serialPortParity = PARNON;
     config.serialPortStopbits = NSTOPB;
-    config.databaseDirectory = ".",
+    config.databaseDirectory = ".";
+    config.countersFilename = NULL;
+    config.voltageFilename = NULL;
+    config.kwInOutFilename = NULL;
 
     // Check cmdline parameters for configfile
     if (argc > 1) {
@@ -988,7 +991,7 @@ int main(int argc, char **argv) {
                 }
 
                 while (timestampArray[readDataCounter] != 0) {
-                    if ((result = print_data()) != E_OK)
+                    if ((result = print_data(&config)) != E_OK)
                         goto EXIT;
                 }
 
