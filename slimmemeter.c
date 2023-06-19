@@ -329,7 +329,7 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
     strcat(config->countersFilename, "/counters.rrd");
 
     if (access(config->countersFilename, F_OK) != 0) {
-        printf("Create counters database file %s\n\n", config->countersFilename);
+        printf("Create counters database file %s\n", config->countersFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->countersFilename, 300, 0, 15, createCounterDB);
@@ -348,7 +348,7 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
     strcat(config->voltageFilename, "/voltage.rrd");
 
     if (access(config->voltageFilename, F_OK) != 0) {
-        printf("Create counters database file %s\n\n", config->voltageFilename);
+        printf("Create voltage database file %s\n", config->voltageFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->voltageFilename, 300, 0, 13, createVoltageDB);
@@ -366,8 +366,8 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
     strcpy(config->kwInOutFilename, config->databaseDirectory);
     strcat(config->kwInOutFilename, "/kwinout.rrd");
 
-    if (access(config->countersFilename, F_OK) != 0) {
-        printf("Create counters database file %s\n\n", config->kwInOutFilename);
+    if (access(config->kwInOutFilename, F_OK) != 0) {
+        printf("Create kw database file %s\n\n", config->kwInOutFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->kwInOutFilename, 300, 0, 16, createKwinoutDB);
@@ -410,20 +410,20 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
     sprintf(values, "%ld:%1.3lf:%1.3lf:%1.3lf", timestampArray[readDataCounter] + 300, elecDataArray[readDataCounter]->v_l1_max, elecDataArray[readDataCounter]->v_l1_avg, elecDataArray[readDataCounter]->v_l1_min);
 
     rrd_clear_error();
-    result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
+    result = rrd_update_r(config->voltageFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
+        fprintf(stderr, "RRD error in file %s: %s\n", config->voltageFilename, rrd_get_error());
         return E_RRD;
     }
 
     sprintf(values, "%ld:%1.3lf:%1.3lf:%1.3lf:%1.3lf:%1.3lf:%1.3lf", timestampArray[readDataCounter] + 300, elecDataArray[readDataCounter]->kw_in_max, elecDataArray[readDataCounter]->kw_in_avg, elecDataArray[readDataCounter]->kw_in_min, elecDataArray[readDataCounter]->kw_out_max, elecDataArray[readDataCounter]->kw_out_avg, elecDataArray[readDataCounter]->kw_out_min);
 
     rrd_clear_error();
-    result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
+    result = rrd_update_r(config->kwInOutFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
+        fprintf(stderr, "RRD error in file %s: %s\n", config->kwInOutFilename, rrd_get_error());
         return E_RRD;
     }
 
