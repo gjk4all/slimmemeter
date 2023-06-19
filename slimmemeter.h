@@ -16,7 +16,8 @@ enum ERRORS {
     E_REGEX_EXEC,
     E_MALLOC,
     E_SERIAL_PORT,
-    E_RRD
+    E_RRD,
+    E_FILE_ACCESS
 };
 
 enum STATES {
@@ -48,6 +49,10 @@ struct _CONFIGSTRUCT {
     tcflag_t serialPortBits;
     tcflag_t serialPortParity;
     tcflag_t serialPortStopbits;
+    char    *databaseDirectory;
+    char    *countersFilename;
+    char    *voltageFilename;
+    char    *kwInOutFilename
 };
 
 typedef struct {

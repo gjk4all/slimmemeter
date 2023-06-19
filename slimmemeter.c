@@ -12,7 +12,6 @@
 
 #include "slimmemeter.h"
 
-char filename[] = "counters.rrd";
 char *configItems[] = {"port", "speed", "bits", "parity", "stopbits"};
 int serialPort;
 
@@ -190,6 +189,16 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             config->serialPortStopbits = ((stopbits - 1) << 6);
             continue;
         }
+        if (strcmp(key, "db-directory") == 0) {
+            if (config->databaseDirectory != NULL)
+                free(config->databaseDirectory);
+            if ((config->databaseDirectory = (char *)malloc(strlen(value) + 1)) == NULL) {
+                fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+                return E_MALLOC;
+            }
+            strcpy(config->databaseDirectory, value);
+            continue;
+        }
         
         fprintf(stderr, "Error, unknown key \"%s\" on line %d in config file \"%s\"\n", key, lineNumber, configFilename);
         return E_CONF_FILE;
@@ -246,9 +255,11 @@ int init_serial(struct _CONFIGSTRUCT * config) {
     return localSerialPort;
 }
 
-int init_rrd_database() {
+int init_rrd_database(struct _CONFIGSTRUCT *config) {
     // Check counter databases
     int result;
+    int baseLength;
+
     const char *createCounterDB[] = {
         "DS:KWh_1_in:DCOUNTER:900:0.0:99999.0",
         "DS:KWh_2_in:DCOUNTER:900:0.0:99999.0",
@@ -267,12 +278,99 @@ int init_rrd_database() {
         "RRA:MIN:0.5:288:800",
         NULL
     };
+    const char *createVoltageDB[] = {
+        "DS:V_max:GAUGE:900:0.0:999.0",
+        "DS:V_avg:GAUGE:900:0.0:999.0",
+        "DS:V_min:GAUGE:900:0.0:999.0",
+        "RRA:LAST:0.5:1:800",
+        "RRA:AVERAGE:0.5:6:800",
+        "RRA:AVERAGE:0.5:24:800",
+        "RRA:AVERAGE:0.5:288:800",
+        "RRA:MAX:0.5:6:800",
+        "RRA:MAX:0.5:24:800",
+        "RRA:MAX:0.5:288:800",
+        "RRA:MIN:0.5:6:800",
+        "RRA:MIN:0.5:24:800",
+        "RRA:MIN:0.5:288:800",
+        NULL
+    };
+    const char *createKwinoutDB[] = {
+        "DS:KW_max_in:GAUGE:900:0.0:999.0",
+        "DS:KW_avg_in:GAUGE:900:0.0:999.0",
+        "DS:KW_min_in:GAUGE:900:0.0:999.0",
+        "DS:KW_max_out:GAUGE:900:0.0:999.0",
+        "DS:KW_avg_out:GAUGE:900:0.0:999.0",
+        "DS:KW_min_out:GAUGE:900:0.0:999.0",
+        "RRA:LAST:0.5:1:800",
+        "RRA:AVERAGE:0.5:6:800",
+        "RRA:AVERAGE:0.5:24:800",
+        "RRA:AVERAGE:0.5:288:800",
+        "RRA:MAX:0.5:6:800",
+        "RRA:MAX:0.5:24:800",
+        "RRA:MAX:0.5:288:800",
+        "RRA:MIN:0.5:6:800",
+        "RRA:MIN:0.5:24:800",
+        "RRA:MIN:0.5:288:800",
+        NULL
+    };
 
-    if (access(filename, F_OK) != 0) {
-        printf("Create database file %s\n\n", filename);
+    baseLength = strlen(config.databaseDirectory) + 15;
+
+    if (access(config->databaseDirectory, R_OK | W_OK | X_OK) != 0) {
+        fprintf(stderr, "Cannot write in directory %s\n", config->databaseDirectory)
+        return E_FILE_ACCESS;
+    }
+
+    if ((config->countersFilename = (char *)malloc(baseLength)) == NULL) {
+        fprintf(stderr, "Error claiming memory for counters filename name: %s\n", strerror(errno));
+        return E_MALLOC;
+    }
+    strcpy(config->countersFilename, config->databaseDirectory);
+    strcat(config->countersFilename, "/counters.rrd");
+
+    if (access(config->countersFilename, F_OK) != 0) {
+        printf("Create counters database file %s\n\n", config->countersFilename);
         fflush(stdout);
         rrd_clear_error();
-        result = rrd_create_r(filename, 300, 0, 15, createCounterDB);
+        result = rrd_create_r(config->countersFilename, 300, 0, 15, createCounterDB);
+
+        if (rrd_test_error()) {
+            fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
+            return E_RRD;
+        }
+    }
+
+    if ((config->voltageFilename = (char *)malloc(baseLength)) == NULL) {
+        fprintf(stderr, "Error claiming memory for voltage filename name: %s\n", strerror(errno));
+        return E_MALLOC;
+    }
+    strcpy(config->voltageFilename, config->databaseDirectory);
+    strcat(config->voltageFilename, "/voltage.rrd");
+
+    if (access(config->voltageFilename, F_OK) != 0) {
+        printf("Create counters database file %s\n\n", config->voltageFilename);
+        fflush(stdout);
+        rrd_clear_error();
+        result = rrd_create_r(config->voltageFilename, 300, 0, 13, createVoltageDB);
+
+        if (rrd_test_error()) {
+            fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
+            return E_RRD;
+        }
+    }
+
+    if ((config->kwInOutFilename = (char *)malloc(baseLength)) == NULL) {
+        fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+        return E_MALLOC;
+    }
+    strcpy(config->kwInOutFilename, config->databaseDirectory);
+    strcat(config->kwInOutFilename, "/kwinout.rrd");
+
+    if (access(config->countersFilename, F_OK) != 0) {
+        printf("Create counters database file %s\n\n", config->kwInOutFilename);
+        fflush(stdout);
+        rrd_clear_error();
+        result = rrd_create_r(config->kwInOutFilename, 300, 0, 16, createKwinoutDB);
 
         if (rrd_test_error()) {
             fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
@@ -291,7 +389,7 @@ void init_arrays() {
     }
 }
 
-int update_rrd_database() {
+int update_rrd_database(struct _CONFIGSTRUCT *config) {
     char values[128];
     int result;
     const char *updateCounters[] = {
@@ -302,11 +400,43 @@ int update_rrd_database() {
     sprintf(values, "%ld:%1.3lf:%1.3lf:%1.3lf:%1.3lf:%1.3lf", timestampArray[readDataCounter] + 300, elecDataArray[readDataCounter]->kwh_1_in, elecDataArray[readDataCounter]->kwh_2_in, elecDataArray[readDataCounter]->kwh_1_out, elecDataArray[readDataCounter]->kwh_2_out, *gasDataArray[readDataCounter]);
 
     rrd_clear_error();
-        result = rrd_update_r(filename, NULL, 1, updateCounters);
+    result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error: %s\n", rrd_get_error());
+        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
         return E_RRD;
+    }
+
+    sprintf(values, "%ld:%1.3lf:%1.3lf:%1.3lf", timestampArray[readDataCounter] + 300, elecDataArray[readDataCounter]->v_l1_max, elecDataArray[readDataCounter]->v_l1_avg, elecDataArray[readDataCounter]->v_l1_min);
+
+    rrd_clear_error();
+    result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
+
+    if (rrd_test_error()) {
+        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
+        return E_RRD;
+    }
+
+    sprintf(values, "%ld:%1.3lf:%1.3lf:%1.3lf:%1.3lf:%1.3lf:%1.3lf", timestampArray[readDataCounter] + 300, elecDataArray[readDataCounter]->kw_in_max, elecDataArray[readDataCounter]->kw_in_avg, elecDataArray[readDataCounter]->kw_in_min, elecDataArray[readDataCounter]->kw_out_max, elecDataArray[readDataCounter]->kw_out_avg, elecDataArray[readDataCounter]->kw_out_min);
+
+    rrd_clear_error();
+    result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
+
+    if (rrd_test_error()) {
+        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
+        return E_RRD;
+    }
+
+    timestampArray[readDataCounter] = 0;
+    free(elecDataArray[readDataCounter]);
+    elecDataArray[readDataCounter] = NULL;
+    free(gasDataArray[readDataCounter]);
+    gasDataArray[readDataCounter] = NULL;
+
+    if (readDataCounter != storeDataCounter) {
+        readDataCounter++;
+        if (readDataCounter >= 10)
+            readDataCounter = 0;
     }
 
     return E_OK;
@@ -335,22 +465,9 @@ int print_data() {
     printf("\n");
     fflush(stdout);
 
-    if ((result = update_rrd_database()) != E_OK)
-        return result;
+    result = update_rrd_database();
 
-    timestampArray[readDataCounter] = 0;
-    free(elecDataArray[readDataCounter]);
-    elecDataArray[readDataCounter] = NULL;
-    free(gasDataArray[readDataCounter]);
-    gasDataArray[readDataCounter] = NULL;
-
-    if (readDataCounter != storeDataCounter) {
-        readDataCounter++;
-        if (readDataCounter >= 10)
-            readDataCounter = 0;
-    }
-
-    return 0;
+    return result;
 }
 
 int store_data(unsigned long timestamp, elec_data * eCummPointer, double * gCummPointer, int counter) {
@@ -670,7 +787,7 @@ int parse_block(char * dataPointer) {
 }
 
 void help_message(char * name) {
-    printf("Usage: %s [OPTIONS]\n\nOptions:\n  -c|--config <configfile>\n  -d|--device <serialdevice>\n  -s|--speed <serialspeed>\n  -p|--parity <parity>\n  -b|--bits <databits>\n  -t|--stopbits <stopbits>\n\n", name);
+    printf("Usage: %s [OPTIONS]\n\nOptions:\n  -c|--config <configfile>\n  -d|--device <serialdevice>\n  -s|--speed <serialspeed>\n  -p|--parity <parity>\n  -b|--bits <databits>\n  -t|--stopbits <stopbits>\n  --dbdir|--db-directory <Directory to store databases>\n\n", name);
 }
 
 int main(int argc, char **argv) {
@@ -695,6 +812,7 @@ int main(int argc, char **argv) {
     config.serialPortBits = CS8;
     config.serialPortParity = PARNON;
     config.serialPortStopbits = NSTOPB;
+    config.databaseDirectory = ".",
 
     // Check cmdline parameters for configfile
     if (argc > 1) {
@@ -777,6 +895,10 @@ int main(int argc, char **argv) {
                 config.serialPortStopbits = ((stopbits - 1) << 6);
                 continue;
             }
+            if ((strcmp(argv[i], "--dbdir") == 0) || (strcmp(argv[i], "--db-directory") == 0)) {
+                config.databaseDirectory = argv[++i];
+                continue;
+            }
 
             fprintf(stderr, "Unknown option \"%s\"\n\n", argv[i]);
             help_message(argv[0]);
@@ -784,14 +906,14 @@ int main(int argc, char **argv) {
         }
     }
 
-    printf("Configuration\nConfigfile: \"%s\"\nSerialPort: \"%s\"\nSpeed: %07o\nBits: %07o\nParity: %07o\nStopbits: %07o\n\n", configFile, config.serialPortFilename, config.serialPortSpeed, config.serialPortBits, config.serialPortParity, config.serialPortStopbits);
+    printf("Configuration\nConfigfile: \"%s\"\nSerialPort: \"%s\"\nSpeed: %07o\nBits: %07o\nParity: %07o\nStopbits: %07o\nDatabase directory: %s\n\n", configFile, config.serialPortFilename, config.serialPortSpeed, config.serialPortBits, config.serialPortParity, config.serialPortStopbits, config.databaseDirectory);
     fflush(stdout);
 
     if ((serialPort = init_serial(&config)) < 0) {
         return E_SERIAL_PORT;
     }
 
-    if (init_rrd_database() != E_OK) {
+    if (init_rrd_database(&config) != E_OK) {
         return E_RRD;
     }
 
