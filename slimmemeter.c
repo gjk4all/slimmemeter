@@ -9,10 +9,10 @@
 #include <regex.h>
 #include <time.h>
 #include <rrd.h>
+#include <signal.h>
 
 #include "slimmemeter.h"
 
-char *configItems[] = {"port", "speed", "bits", "parity", "stopbits"};
 int serialPort;
 
 unsigned long timestampArray[12];
@@ -20,6 +20,7 @@ elec_data * elecDataArray[12];
 double * gasDataArray[12];
 int storeDataCounter = 0;
 int readDataCounter = 0;
+int verbose = 0;
 
 char * str_tolower(char * s) {
     for (char * p=s; *p ; p++)
@@ -38,6 +39,27 @@ speed_t get_baudrate(int baudrate) {
     }
 
     return 0;
+}
+
+void signal_handler(int signal) {
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
+
+    if (signal == SIGUSR1) {
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    
+        if ((verbose = (verbose == 0)?1:0) == 1) {
+            printf("%s - Enable verbose mode", timeStringBuffer);
+        }
+        else {
+            printf("%s - Disable verbose mode", timeStringBuffer);
+        }
+
+        fflush(stdout);
+    }
 }
 
 /*
@@ -84,28 +106,47 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
     int lineNumber = 0;
     char key[32];
     char value[256];
-
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
+ 
     // Compile regular expressions
     if ((reError = regcomp(&reEmptyLine, "^\\s*$", REG_NOSUB | REG_EXTENDED)) != 0) {
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
         regerror(reError, &reEmptyLine, value, 256);
-        fprintf(stderr, "RE compile of \"^\\s*$\" failed: %s\n", "^\\s*$", value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*$\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
     if ((reError = regcomp(&reCommentedOut, "^\\s*[;#]", REG_NOSUB | REG_EXTENDED)) != 0) {
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
         regerror(reError, &reCommentedOut, value, 256);
-        fprintf(stderr, "RE compile of \"^\\s*[;#]\" failed: %s\n", "^\\s*$", value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*[;#]\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
     if ((reError = regcomp(&reKeyValuePair, "^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$", REG_NEWLINE | REG_EXTENDED)) != 0) {
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
         regerror(reError, &reKeyValuePair, value, 256);
-        fprintf(stderr, "RE compile of \"^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$\" failed: %s\n", "^\\s*$", value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
 
     // Open config filew
     fp = fopen(configFilename, "r");
     if (fp == NULL) {
-        fprintf(stderr, "Error %i from open configfile %s: %s\n", errno, configFilename, strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error %i from open configfile %s: %s\n", timeStringBuffer, errno, configFilename, strerror(errno));
         return E_CONF_FILE;
     }
 
@@ -123,7 +164,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         if ((reError = regexec(&reKeyValuePair, line, 4, pmatch, 0)) != 0) {
             regerror(reError, &reKeyValuePair, value, 256);
             line[strlen(line) - 1] = '\0';
-            fprintf(stderr, "Syntax error (%s) on line %d in file \"%s\": \"%s\"\n", value, lineNumber, configFilename, line);
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Syntax error (%s) on line %d in file \"%s\": \"%s\"\n", timeStringBuffer, value, lineNumber, configFilename, line);
             return E_CONF_FILE;
         }
 
@@ -135,13 +180,15 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         memcpy(value, &line[pmatch[2].rm_so], pmatch[2].rm_eo - pmatch[2].rm_so);
         value[pmatch[2].rm_eo - pmatch[2].rm_so] = '\0';
 
-        //printf("Line %3d \"%s\" -> \"%s\"\n", lineNumber, key, value);
-
         if (strcmp(key, "device") == 0) {
             if (config->serialPortFilename != NULL)
                 free(config->serialPortFilename);
             if ((config->serialPortFilename = (char *)malloc(strlen(value) + 1)) == NULL) {
-                fprintf(stderr, "Error claiming memory for serial device name: %s\n", strerror(errno));
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Error claiming memory for serial device name: %s\n", timeStringBuffer, strerror(errno));
                 return E_MALLOC;
             }
             strcpy(config->serialPortFilename, value);
@@ -149,7 +196,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         }
         if ((strcmp(key, "speed") == 0) || (strcmp(key, "baud") == 0)) {
             if ((config->serialPortSpeed = get_baudrate(atoi(value))) == 0) {
-                fprintf(stderr, "Invalid baudrate value: %s\n", value);
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Invalid baudrate value: %s\n", timeStringBuffer, value);
                 return E_CONF_FILE;
             }
             continue;
@@ -164,7 +215,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             else if ((strcmp(value, "o") == 0) || (strcmp(value, "odd") == 0))
                 config->serialPortParity = PARENB | PARODD;
             else {
-                fprintf(stderr, "Invalid parity: %s\n", value);
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Invalid parity: %s\n", timeStringBuffer, value);
                 return E_CONF_FILE;
             }
             continue;
@@ -173,7 +228,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             int bits = atoi(value);
 
             if ((bits < 5) || (bits > 8)) {
-                fprintf(stderr, "Invalid number of bits: %s\n", value);
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Invalid number of bits: %s\n", timeStringBuffer, value);
                 return E_CONF_FILE;
             }
             config->serialPortBits = ((bits - 5) << 4);
@@ -183,7 +242,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             int stopbits = atoi(value);
 
             if ((stopbits < 1) || (stopbits > 2)) {
-                fprintf(stderr, "Invalid number of stopbits: %s\n", value);
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Invalid number of stopbits: %s\n", timeStringBuffer, value);
                 return E_CONF_FILE;
             }
             config->serialPortStopbits = ((stopbits - 1) << 6);
@@ -193,14 +256,22 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             if (config->databaseDirectory != NULL)
                 free(config->databaseDirectory);
             if ((config->databaseDirectory = (char *)malloc(strlen(value) + 1)) == NULL) {
-                fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Error claiming memory for database directory name: %s\n", timeStringBuffer, strerror(errno));
                 return E_MALLOC;
             }
             strcpy(config->databaseDirectory, value);
             continue;
         }
         
-        fprintf(stderr, "Error, unknown key \"%s\" on line %d in config file \"%s\"\n", key, lineNumber, configFilename);
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error, unknown key \"%s\" on line %d in config file \"%s\"\n", timeStringBuffer, key, lineNumber, configFilename);
         return E_CONF_FILE;
     }
 
@@ -214,14 +285,25 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
 int init_serial(struct _CONFIGSTRUCT * config) {
     struct termios tty;
     int localSerialPort = open(config->serialPortFilename, O_RDWR);
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
 
     if (localSerialPort < 0) {
-        fprintf(stderr, "Error %i from open serialport %s: %s\n", errno, config->serialPortFilename, strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error %i from open serialport %s: %s\n", timeStringBuffer, errno, config->serialPortFilename, strerror(errno));
         return -1;
     }
 
     if (tcgetattr(localSerialPort, &tty) != 0) {
-        fprintf(stderr, "Error %i from tcgetattr: %s\n", errno, strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error %i from tcgetattr: %s\n", timeStringBuffer, errno, strerror(errno));
         return -2;
     }
 
@@ -248,7 +330,11 @@ int init_serial(struct _CONFIGSTRUCT * config) {
     cfsetospeed(&tty, config->serialPortSpeed);
 
     if (tcsetattr(localSerialPort, TCSANOW, &tty) != 0) {
-        fprintf(stderr, "Error %i from tcsetattr: %s\n", errno, strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error %i from tcsetattr: %s\n", timeStringBuffer, errno, strerror(errno));
         return -3;
     }
 
@@ -259,6 +345,9 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
     // Check counter databases
     int result;
     int baseLength;
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
 
     const char *createCounterDB[] = {
         "DS:KWh_1_in:DCOUNTER:900:0.0:99999.0",
@@ -317,63 +406,91 @@ int init_rrd_database(struct _CONFIGSTRUCT *config) {
     baseLength = strlen(config->databaseDirectory) + 15;
 
     if (access(config->databaseDirectory, R_OK | W_OK | X_OK) != 0) {
-        fprintf(stderr, "Cannot write in directory %s\n", config->databaseDirectory);
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Cannot write in directory %s\n", timeStringBuffer, config->databaseDirectory);
         return E_FILE_ACCESS;
     }
 
     if ((config->countersFilename = (char *)malloc(baseLength)) == NULL) {
-        fprintf(stderr, "Error claiming memory for counters filename name: %s\n", strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error claiming memory for counters filename name: %s\n", timeStringBuffer, strerror(errno));
         return E_MALLOC;
     }
     strcpy(config->countersFilename, config->databaseDirectory);
     strcat(config->countersFilename, "/counters.rrd");
 
     if (access(config->countersFilename, F_OK) != 0) {
-        printf("Create counters database file %s\n", config->countersFilename);
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        printf("%s - Create counters database file %s\n", timeStringBuffer, config->countersFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->countersFilename, 300, 0, 15, createCounterDB);
 
         if (rrd_test_error()) {
-            fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
+            fprintf(stderr, "%s - RRD create error: %s\n", timeStringBuffer, rrd_get_error());
             return E_RRD;
         }
     }
 
     if ((config->voltageFilename = (char *)malloc(baseLength)) == NULL) {
-        fprintf(stderr, "Error claiming memory for voltage filename name: %s\n", strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error claiming memory for voltage filename name: %s\n", timeStringBuffer, strerror(errno));
         return E_MALLOC;
     }
     strcpy(config->voltageFilename, config->databaseDirectory);
     strcat(config->voltageFilename, "/voltage.rrd");
 
     if (access(config->voltageFilename, F_OK) != 0) {
-        printf("Create voltage database file %s\n", config->voltageFilename);
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        printf("%s - Create voltage database file %s\n", timeStringBuffer, config->voltageFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->voltageFilename, 300, 0, 13, createVoltageDB);
 
         if (rrd_test_error()) {
-            fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
+            fprintf(stderr, "%s - RRD create error: %s\n", timeStringBuffer, rrd_get_error());
             return E_RRD;
         }
     }
 
     if ((config->kwInOutFilename = (char *)malloc(baseLength)) == NULL) {
-        fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error claiming memory for database directory name: %s\n", timeStringBuffer, strerror(errno));
         return E_MALLOC;
     }
     strcpy(config->kwInOutFilename, config->databaseDirectory);
     strcat(config->kwInOutFilename, "/kwinout.rrd");
 
     if (access(config->kwInOutFilename, F_OK) != 0) {
-        printf("Create kw database file %s\n\n", config->kwInOutFilename);
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        printf("%s - Create kw database file %s\n\n", timeStringBuffer, config->kwInOutFilename);
         fflush(stdout);
         rrd_clear_error();
         result = rrd_create_r(config->kwInOutFilename, 300, 0, 16, createKwinoutDB);
 
         if (rrd_test_error()) {
-            fprintf(stderr, "RRD create error: %s\n", rrd_get_error());
+            fprintf(stderr, "%s - RRD create error: %s\n", timeStringBuffer, rrd_get_error());
             return E_RRD;
         }
     }
@@ -392,6 +509,9 @@ void init_arrays() {
 int update_rrd_database(struct _CONFIGSTRUCT *config) {
     char values[128];
     int result;
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
     const char *updateCounters[] = {
         values,
         NULL
@@ -403,7 +523,11 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
     result = rrd_update_r(config->countersFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error in file %s: %s\n", config->countersFilename, rrd_get_error());
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - RRD error in file %s: %s\n", timeStringBuffer, config->countersFilename, rrd_get_error());
         return E_RRD;
     }
 
@@ -413,7 +537,11 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
     result = rrd_update_r(config->voltageFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error in file %s: %s\n", config->voltageFilename, rrd_get_error());
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - RRD error in file %s: %s\n", timeStringBuffer, config->voltageFilename, rrd_get_error());
         return E_RRD;
     }
 
@@ -423,7 +551,11 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
     result = rrd_update_r(config->kwInOutFilename, NULL, 1, updateCounters);
 
     if (rrd_test_error()) {
-        fprintf(stderr, "RRD error in file %s: %s\n", config->kwInOutFilename, rrd_get_error());
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - RRD error in file %s: %s\n", timeStringBuffer, config->kwInOutFilename, rrd_get_error());
         return E_RRD;
     }
 
@@ -445,7 +577,8 @@ int update_rrd_database(struct _CONFIGSTRUCT *config) {
 int print_data(struct _CONFIGSTRUCT *config) {
     char timeStringBuffer[26];
     struct tm * tm_info;
-    int result;
+    time_t msgtime;
+    int result = 0;
 
     tm_info = localtime(&timestampArray[readDataCounter]);
     strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
@@ -464,8 +597,6 @@ int print_data(struct _CONFIGSTRUCT *config) {
     printf("Gas consumpion    : %10.3lf m3\n", *gasDataArray[readDataCounter]);
     printf("\n");
     fflush(stdout);
-
-    result = update_rrd_database(config);
 
     return result;
 }
@@ -523,12 +654,19 @@ int parse_block(char * dataPointer) {
     char * currLinePointer;
     char * nextLinePointer;
     int reError;
-    
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
+
     if (reElecPointer == NULL) {
         reElecPointer = (regex_t *)malloc(sizeof(regex_t));
         if ((reError = regcomp(reElecPointer, "^([^(]+)\\(([0-9.]{1,10})\\*.*\\)", REG_EXTENDED)) != 0) {
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
             regerror(reError, reElecPointer, error, 80);
-            fprintf(stderr, "RE compile of \"^([^(]+)\\(([0-9.]{1,10})\\*.*\\)\" failed: %s\n", error);
+            fprintf(stderr, "%s - ERROR RE compile of \"^([^(]+)\\(([0-9.]{1,10})\\*.*\\)\" failed: %s\n", timeStringBuffer, error);
             return E_REGEX_COMP;
         }
     }
@@ -536,15 +674,19 @@ int parse_block(char * dataPointer) {
     if (reGasPointer == NULL) {
         reGasPointer = (regex_t *)malloc(sizeof(regex_t));
         if ((reError = regcomp(reGasPointer, "^([^(]+)\\([^(]+\\)\\(([0-9.]{1,10})\\*.*\\)", REG_EXTENDED)) != 0) {
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
             regerror(reError, reGasPointer, error, 80);
-            fprintf(stderr, "RE compile of \"^([^(]+)\\([^(]+\\)\\(([0-9.]{1,10})\\*.*\\)\" failed: %s\n", error);
+            fprintf(stderr, "%s - ERROR RE compile of \"^([^(]+)\\([^(]+\\)\\(([0-9.]{1,10})\\*.*\\)\" failed: %s\n", timeStringBuffer, error);
             return E_REGEX_COMP;
         }
     }
 
     if ((nextLinePointer = dataPointer) == NULL) {
-        printf("#\n");
-        return 1;
+        // No data to parse.
+        return 0;
     }
 
     currentMeasureTime = (unsigned long)time(NULL);
@@ -562,13 +704,21 @@ int parse_block(char * dataPointer) {
 
     if (counter == 0) {
         if ((eCummPointer = (elec_data *)malloc(sizeof(elec_data))) == NULL) {
-            fprintf(stderr, "Error, could not allocate %d bytes of memory!", sizeof(elec_data));
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Error, could not allocate %d bytes of memory!", timeStringBuffer, sizeof(elec_data));
             return E_MALLOC;
         }
         memset(eCummPointer, '\0', sizeof(elec_data));
 
         if ((gCummPointer = (double *)malloc(sizeof(double))) == NULL) {
-            fprintf(stderr, "Error, could not allocate %d bytes of memory!", sizeof(double));
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Error, could not allocate %d bytes of memory!", timeStringBuffer, sizeof(double));
             return E_MALLOC;
         }
     }
@@ -600,7 +750,11 @@ int parse_block(char * dataPointer) {
 
         // Get key/value from input
         if ((matchPointer[1].rm_eo - matchPointer[1].rm_so) >=  sizeof(key)) {
-            fprintf(stderr, "Error, size of match > key!");
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Error, size of match > key!", timeStringBuffer);
             return E_REGEX_EXEC;
         }
         memcpy(key, &currLinePointer[matchPointer[1].rm_so], matchPointer[1].rm_eo - matchPointer[1].rm_so);
@@ -608,40 +762,37 @@ int parse_block(char * dataPointer) {
 
 
         if ((matchPointer[2].rm_eo - matchPointer[2].rm_so) >=  sizeof(value)) {
-            fprintf(stderr, "Error, size of match > value!");
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Error, size of match > value!", timeStringBuffer);
             return E_REGEX_EXEC;
         }
         memcpy(value, &currLinePointer[matchPointer[2].rm_so], matchPointer[2].rm_eo - matchPointer[2].rm_so);
         value[matchPointer[2].rm_eo - matchPointer[2].rm_so] = '\0';
 
-        //printf("[%s] ==> [%s]\n", key, value);
-        //fflush(stdout);
-
         if (strcmp(key, "1-0:1.8.1") == 0)  {
             // Usage KWh tariff 1
             eCummPointer->kwh_1_in = atof(value);
-            //printf("KWh used in tariff 1     : %10.3lf KWh\n", eCummPointer->kwh_1_in);
             continue;
         }
 
         if (strcmp(key, "1-0:1.8.2") == 0)  {
             // Usage KWh tariff 2
             eCummPointer->kwh_2_in = atof(value);
-            //printf("KWh used in tariff 2     : %10.3lf KWh\n", eCummPointer->kwh_2_in);
             continue;
         }
         
         if (strcmp(key, "1-0:2.8.1") == 0)  {
             // Delivery KWh tariff 1
             eCummPointer->kwh_1_out = atof(value);
-            //printf("KWh delivered in tariff 1: %10.3lf KWh\n", eCummPointer->kwh_1_out);
             continue;
         }
         
         if (strcmp(key, "1-0:2.8.2") == 0)  {
             // Delivery KWh tariff 2
             eCummPointer->kwh_2_out = atof(value);
-            //printf("KWh delivered in tariff 2: %10.3lf KWh\n", eCummPointer->kwh_2_out);
             continue;
         }
         
@@ -655,7 +806,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->kw_in_max) {
                 eCummPointer->kw_in_max = tempValue;
             }
-            //printf("Current power usage      : %10.3lf KW\n", tempValue);
         }
         
         if (strcmp(key, "1-0:2.7.0") == 0)  {
@@ -668,7 +818,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->kw_out_max) {
                 eCummPointer->kw_out_max = tempValue;
             }
-            //printf("Current power delivery    : %10.3lf KW\n", tempValue);
         }
         
         if (strcmp(key, "1-0:31.7.0") == 0)  {
@@ -681,7 +830,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->i_l1_max) {
                 eCummPointer->i_l1_max = tempValue;
             }
-            //printf("Current L1                : %10.3lf A\n", tempValue);
         }
         
         if (strcmp(key, "1-0:32.7.0") == 0)  {
@@ -694,7 +842,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->v_l1_max) {
                 eCummPointer->v_l1_max = tempValue;
             }
-            //printf("Voltage L1                : %10.3lf V\n", tempValue);
         }
 
         if (strcmp(key, "1-0:51.7.0") == 0)  {
@@ -707,7 +854,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->i_l2_max) {
                 eCummPointer->i_l2_max = tempValue;
             }
-            //printf("Current L2                : %10.3lf A\n", tempValue);
         }
 
         if (strcmp(key, "1-0:52.7.0") == 0)  {
@@ -720,7 +866,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->v_l2_max) {
                 eCummPointer->v_l2_max = tempValue;
             }
-            //printf("Voltage L2                : %10.3lf V\n", tempValue);
         }
 
         if (strcmp(key, "1-0:71.7.0") == 0)  {
@@ -733,7 +878,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->i_l3_max) {
                 eCummPointer->i_l3_max = tempValue;
             }
-            //printf("Current L3                : %10.3lf A\n", tempValue);
         }
         
         if (strcmp(key, "1-0:72.7.0") == 0)  {
@@ -746,7 +890,6 @@ int parse_block(char * dataPointer) {
             if (tempValue > eCummPointer->v_l3_max) {
                 eCummPointer->v_l3_max = tempValue;
             }
-            //printf("Voltage L3                : %10.3lf V\n", tempValue);
         }
         
         if (strcmp(key, "1-0:21.7.0") == 0)  {
@@ -776,18 +919,16 @@ int parse_block(char * dataPointer) {
         if (strcmp(key, "0-1:24.2.1") == 0)  {
             // Gas delivery m3
             *gCummPointer = atof(value);
-            //printf("Gas delivery              : %10.3lf m3\n", *gCummPointer);
         }
     }
 
     counter++;
-    //printf(".");
-    //fflush(stdout);
     return 0;
 }
 
 void help_message(char * name) {
     printf("Usage: %s [OPTIONS]\n\nOptions:\n  -c|--config <configfile>\n  -d|--device <serialdevice>\n  -s|--speed <serialspeed>\n  -p|--parity <parity>\n  -b|--bits <databits>\n  -t|--stopbits <stopbits>\n  --dbdir|--db-directory <Directory to store databases>\n\n", name);
+    fflush(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -805,11 +946,22 @@ int main(int argc, char **argv) {
     int result;
     int status = S_IDLE;
     int numchars;
+    int rrdErrors = 0;
     unsigned short crc;
+    char timeStringBuffer[26];
+    struct tm * tm_info;
+    time_t msgtime;
+
+    // Catch SIGUSR1
+    signal(SIGUSR1, signal_handler);
 
     // Prepare config to defaults
     if ((config.databaseDirectory = (char *)malloc(sizeof(char) * 2)) == NULL) {
-        fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        fprintf(stderr, "%s - Error claiming memory for database directory name: %s\n", timeStringBuffer, strerror(errno));
         return E_MALLOC;
     }
 
@@ -858,7 +1010,11 @@ int main(int argc, char **argv) {
                 if (config.serialPortFilename != NULL)
                     free(config.serialPortFilename);
                 if ((config.serialPortFilename = (char *)malloc(strlen(argv[i]) + 1)) == NULL) {
-                    fprintf(stderr, "Error claiming memory for serial device name: %s\n", strerror(errno));
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Error claiming memory for serial device name: %s\n", timeStringBuffer, strerror(errno));
                     return E_MALLOC;
                 }
                 strcpy(config.serialPortFilename, argv[i]);
@@ -866,7 +1022,11 @@ int main(int argc, char **argv) {
             }
             if ((strcmp(argv[i], "-s") == 0) || (strcmp(argv[i], "--speed") == 0)) {
                 if ((config.serialPortSpeed = get_baudrate(atoi(argv[++i]))) == 0) {
-                    fprintf(stderr, "Invalid baudrate value: %s\n", argv[i]);
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Invalid baudrate value: %s\n", timeStringBuffer, argv[i]);
                     return E_CLI_PARAM;
                 }
                 continue;
@@ -881,7 +1041,11 @@ int main(int argc, char **argv) {
                 else if ((strcmp(val, "o") == 0) || (strcmp(val, "odd") == 0))
                     config.serialPortParity = PARENB | PARODD;
                 else {
-                    fprintf(stderr, "Invalid parity: %s\n", argv[i]);
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Invalid parity: %s\n", timeStringBuffer, argv[i]);
                     return E_CLI_PARAM;
                 }
                 continue;
@@ -889,7 +1053,11 @@ int main(int argc, char **argv) {
             if ((strcmp(argv[i], "-b") == 0) || (strcmp(argv[i], "--bits") == 0)) {
                 int bits = atoi(argv[++i]);
                 if ((bits < 5) || (bits > 8)) {
-                    fprintf(stderr, "Invalid number of bits: %s\n", argv[i]);
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Invalid number of bits: %s\n", timeStringBuffer, argv[i]);
                     return E_CLI_PARAM;
                 }
                 config.serialPortBits = ((bits - 5) << 4);
@@ -898,18 +1066,38 @@ int main(int argc, char **argv) {
             if ((strcmp(argv[i], "-t") == 0) || (strcmp(argv[i], "--stopbits") == 0)) {
                 int stopbits = atoi(argv[++i]);
                 if ((stopbits < 1) || (stopbits > 2)) {
-                    fprintf(stderr, "Invalid number of stopbits: %s\n", argv[i]);
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Invalid number of stopbits: %s\n", timeStringBuffer, argv[i]);
                     return E_CLI_PARAM;
                 }
                 config.serialPortStopbits = ((stopbits - 1) << 6);
                 continue;
             }
             if ((strcmp(argv[i], "--dbdir") == 0) || (strcmp(argv[i], "--db-directory") == 0)) {
-                config.databaseDirectory = argv[++i];
+                if ((config.databaseDirectory = (char *)malloc(sizeof(char) * (strlen(argv[++i]) + 1))) == NULL) {
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - Error claiming memory for database directory name: %s\n", timeStringBuffer, strerror(errno));
+                    return E_MALLOC;
+                }
+                strcpy(config.databaseDirectory, argv[i]);
+                continue;
+            }
+            if ((strcmp(argv[i], "-v") == 0) || (strcmp(argv[i], "--verbose") == 0)) {
+                verbose = 1;
                 continue;
             }
 
-            fprintf(stderr, "Unknown option \"%s\"\n\n", argv[i]);
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Unknown option \"%s\"\n\n", timeStringBuffer, argv[i]);
             help_message(argv[0]);
             return E_CLI_PARAM;
         }
@@ -936,7 +1124,11 @@ int main(int argc, char **argv) {
         }
         if (result == -1) {
             // Error condition
-            fprintf(stderr, "Error while reading serial port \"%s\": %s\n", config.serialPortFilename, strerror(errno));
+            msgtime = time(NULL);
+            tm_info = localtime(&msgtime);
+            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+            fprintf(stderr, "%s - Error while reading serial port \"%s\": %s\n", timeStringBuffer, config.serialPortFilename, strerror(errno));
             return E_SERIAL_PORT;
         }
         for (int index = 0; index < result; index++){
@@ -988,17 +1180,37 @@ int main(int argc, char **argv) {
                 status = S_IDLE;
 
                 if (crc != (unsigned short)strtol(checksumStr, NULL, 16)) {
-                    fprintf(stderr, "CRC error in datagram\n");
+                    msgtime = time(NULL);
+                    tm_info = localtime(&msgtime);
+                    strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                    fprintf(stderr, "%s - CRC error in datagram\n", timeStringBuffer);
                     break;
                 }
 
-                if ((result = parse_block(dataBlock)) != 0) {
+                if ((result = parse_block(dataBlock)) != E_OK) {
                     goto EXIT;
                 }
 
                 while (timestampArray[readDataCounter] != 0) {
-                    if ((result = print_data(&config)) != E_OK)
-                        goto EXIT;
+                    if (verbose != 0)
+                        print_data(NULL);
+
+                    if ((result = update_rrd_database(&config)) != E_OK) {
+                        rrdErrors++;
+
+                        if (rrdErrors >= 9) {
+                            msgtime = time(NULL);
+                            tm_info = localtime(&msgtime);
+                            strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                            fprintf(stderr, "%s - To many errors updating RRD files", timeStringBuffer);
+                            goto EXIT;
+                        }
+                    }
+                    else {
+                        rrdErrors = 0;
+                    }
                 }
 
                 break;
