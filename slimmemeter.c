@@ -801,18 +801,24 @@ int main(int argc, char **argv) {
     char * configFile = NULL;
     char * dataPointer = dataBlock;
     char * checksumPointer;
+    char * defaultDirectory;
     int result;
     int status = S_IDLE;
     int numchars;
     unsigned short crc;
 
     // Prepare config to defaults
+    if ((config.databaseDirectory = (char *)malloc(sizeof(char) * 2)) == NULL) {
+        fprintf(stderr, "Error claiming memory for database directory name: %s\n", strerror(errno));
+        return E_MALLOC;
+    }
+
     config.serialPortFilename = NULL;
     config.serialPortSpeed = B115200;
     config.serialPortBits = CS8;
     config.serialPortParity = PARNON;
     config.serialPortStopbits = NSTOPB;
-    config.databaseDirectory = ".";
+    strcpy(config.databaseDirectory, ".");
     config.countersFilename = NULL;
     config.voltageFilename = NULL;
     config.kwInOutFilename = NULL;
