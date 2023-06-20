@@ -52,10 +52,10 @@ void signal_handler(int signal) {
         strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
     
         if ((verbose = (verbose == 0)?1:0) == 1) {
-            printf("%s - Enable verbose mode", timeStringBuffer);
+            printf("%s - Enable verbose mode\n", timeStringBuffer);
         }
         else {
-            printf("%s - Disable verbose mode", timeStringBuffer);
+            printf("%s - Disable verbose mode\n", timeStringBuffer);
         }
 
         fflush(stdout);
@@ -696,7 +696,6 @@ int parse_block(char * dataPointer) {
     }
 
     if ((currentMeasureTime / 300) != lastMeasureTime) {
-        printf("\n");
         store_data(lastMeasureTime * 300, eCummPointer, gCummPointer, counter);
         counter = 0;
         lastMeasureTime = currentMeasureTime / 300;
