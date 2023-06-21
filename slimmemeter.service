@@ -1,0 +1,14 @@
+[Unit]
+Description=Slimmemeter readout service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=30
+User=slimmemeter
+ExecStart=/usr/local/bin/slimmemeter
+
+[Install]
+WantedBy=multi-user.target

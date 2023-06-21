@@ -96,6 +96,7 @@ unsigned short crc_16(char *data_p) {
 int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
     regex_t reEmptyLine;
     regex_t reCommentedOut;
+    regex_t reSection;
     regex_t reKeyValuePair;
     regmatch_t pmatch[4];
     FILE * fp;
@@ -106,6 +107,7 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
     int lineNumber = 0;
     char key[32];
     char value[256];
+    char * sectionName = NULL;
     char timeStringBuffer[26];
     struct tm * tm_info;
     time_t msgtime;
@@ -117,7 +119,7 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
         regerror(reError, &reEmptyLine, value, 256);
-        fprintf(stderr, "%s - RE compile of \"^\\s*$\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*$\" failed: %s\n", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
     if ((reError = regcomp(&reCommentedOut, "^\\s*[;#]", REG_NOSUB | REG_EXTENDED)) != 0) {
@@ -126,7 +128,16 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
         regerror(reError, &reCommentedOut, value, 256);
-        fprintf(stderr, "%s - RE compile of \"^\\s*[;#]\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*[;#]\" failed: %s\n", timeStringBuffer, value);
+        return E_REGEX_COMP;
+    }
+    if ((reError = regcomp(&reKeyValuePair, "^\\s*\\[(.*)\\]\\s*$", REG_NEWLINE | REG_EXTENDED)) != 0) {
+        msgtime = time(NULL);
+        tm_info = localtime(&msgtime);
+        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+        regerror(reError, &reKeyValuePair, value, 256);
+        fprintf(stderr, "%s - RE compile of \"^\\s*\\[(.*)\\]\\s*$\" failed: %s\n", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
     if ((reError = regcomp(&reKeyValuePair, "^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$", REG_NEWLINE | REG_EXTENDED)) != 0) {
@@ -135,11 +146,11 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
         regerror(reError, &reKeyValuePair, value, 256);
-        fprintf(stderr, "%s - RE compile of \"^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$\" failed: %s\n", "^\\s*$", timeStringBuffer, value);
+        fprintf(stderr, "%s - RE compile of \"^\\s*(\\S+)\\s*[=:]\\s*(.+?)\\s*$\" failed: %s\n", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
 
-    // Open config filew
+    // Open config file
     fp = fopen(configFilename, "r");
     if (fp == NULL) {
         msgtime = time(NULL);
@@ -160,6 +171,26 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         // Skip commented lines
         if (regexec(&reCommentedOut, line, 0, NULL, 0) == 0)
             continue;
+        // Get section name
+        if (regexec(&reSection, line, 3, pmatch, 0) == 0) {
+            if (sectionName != NULL) 
+                free(sectionName);
+            
+            if ((sectionName = (char *)malloc(sizeof(char) * (pmatch[1].rm_eo - pmatch[1].rm_so + 1))) == NULL) {;
+                msgtime = time(NULL);
+                tm_info = localtime(&msgtime);
+                strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+
+                fprintf(stderr, "%s - Error claiming memory for section name: %s\n", timeStringBuffer, strerror(errno));
+                return E_MALLOC;
+            }
+
+            memcpy(sectionName, &line[pmatch[1].rm_so], pmatch[1].rm_eo - pmatch[1].rm_so);
+            sectionName[pmatch[1].rm_eo - pmatch[1].rm_so] = '\0';
+            str_tolower(sectionName);
+
+            continue;
+        }
         // Exit if the line doesn't match key value syntax
         if ((reError = regexec(&reKeyValuePair, line, 4, pmatch, 0)) != 0) {
             regerror(reError, &reKeyValuePair, value, 256);
@@ -266,13 +297,6 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
             strcpy(config->databaseDirectory, value);
             continue;
         }
-        
-        msgtime = time(NULL);
-        tm_info = localtime(&msgtime);
-        strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-
-        fprintf(stderr, "%s - Error, unknown key \"%s\" on line %d in config file \"%s\"\n", timeStringBuffer, key, lineNumber, configFilename);
-        return E_CONF_FILE;
     }
 
     fclose(fp);
@@ -926,7 +950,19 @@ int parse_block(char * dataPointer) {
 }
 
 void help_message(char * name) {
-    printf("Usage: %s [OPTIONS]\n\nOptions:\n  -c|--config <configfile>\n  -d|--device <serialdevice>\n  -s|--speed <serialspeed>\n  -p|--parity <parity>\n  -b|--bits <databits>\n  -t|--stopbits <stopbits>\n  --dbdir|--db-directory <Directory to store databases>\n\n", name);
+    printf("Usage: %s [OPTIONS]\n\nOptions:\n", name);
+    printf("  -h|--help                      This message/n");
+    printf("  -v|--verbose                   /n");
+    printf("/n");
+    printf("  -c|--config <configfile>       The configfile location\n");
+    printf("  -d|--device <serialdevice>     The serial port to the meter\n");
+    printf("  -s|--speed <serialspeed>       Communication speed (115200)\n");
+    printf("  -p|--parity <parity>           Protocol parity bit (None)\n");
+    printf("  -b|--bits <databits>           Protocol databits   (8)\n");
+    printf("  -t|--stopbits <stopbits>       Protocol stopbits   (1)\n");
+    printf("/n");
+    printf("  --dbdir|--db-directory <Dir>   Directory to store databases>\n");
+    printf("/n");
     fflush(stdout);
 }
 
@@ -1206,6 +1242,8 @@ int main(int argc, char **argv) {
                             fprintf(stderr, "%s - To many errors updating RRD files", timeStringBuffer);
                             goto EXIT;
                         }
+
+                        break;
                     }
                     else {
                         rrdErrors = 0;
@@ -1223,6 +1261,9 @@ int main(int argc, char **argv) {
 
 EXIT:
     close(serialPort);
+
+    fflush(stdout);
+    fflush(stderr);
 
     return result;
 }
