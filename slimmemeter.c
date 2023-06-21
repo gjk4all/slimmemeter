@@ -131,12 +131,12 @@ int read_config(struct _CONFIGSTRUCT *config, char *configFilename) {
         fprintf(stderr, "%s - RE compile of \"^\\s*[;#]\" failed: %s\n", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
-    if ((reError = regcomp(&reKeyValuePair, "^\\s*\\[(.*)\\]\\s*$", REG_NEWLINE | REG_EXTENDED)) != 0) {
+    if ((reError = regcomp(&reSection, "^\\s*\\[(.*)\\]\\s*$", REG_NEWLINE | REG_EXTENDED)) != 0) {
         msgtime = time(NULL);
         tm_info = localtime(&msgtime);
         strftime(timeStringBuffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
-        regerror(reError, &reKeyValuePair, value, 256);
+        regerror(reError, &reSection, value, 256);
         fprintf(stderr, "%s - RE compile of \"^\\s*\\[(.*)\\]\\s*$\" failed: %s\n", timeStringBuffer, value);
         return E_REGEX_COMP;
     }
